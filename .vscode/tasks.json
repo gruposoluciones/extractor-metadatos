@@ -1,0 +1,51 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Compilar ejecutable",
+            "detail": "Genera dist/ con el .exe y el ZIP portable",
+            "type": "shell",
+            "command": "python",
+            "args": ["scripts/build.py"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": [],
+            "group": { "kind": "build", "isDefault": true }
+        },
+        {
+            "label": "Pruebas unitarias",
+            "type": "shell",
+            "command": "python",
+            "args": ["-m", "unittest", "discover", "-s", "tests", "-v"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+            },
+            "problemMatcher": [],
+            "group": { "kind": "test", "isDefault": true }
+        },
+        {
+            "label": "Verificar entorno de compilación",
+            "type": "shell",
+            "command": "python",
+            "args": ["scripts/build.py", "--check"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Comprobar sintaxis",
+            "type": "shell",
+            "command": "python",
+            "args": ["-m", "compileall", "-q", "src", "scripts", "tests"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Ejecutar ejecutable compilado",
+            "type": "shell",
+            "command": "${workspaceFolder}/dist/ExtractorMetadatos/ExtractorMetadatos.exe",
+            "args": ["--no-browser"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        }
+    ]
+}

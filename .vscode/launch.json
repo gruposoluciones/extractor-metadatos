@@ -1,0 +1,108 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Web: servidor + navegador",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "extractor",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "PYTHONIOENCODING": "utf-8"
+            }
+        },
+        {
+            "name": "Web: servidor sin navegador",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "extractor",
+            "args": ["--no-browser"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "PYTHONIOENCODING": "utf-8"
+            }
+        },
+        {
+            "name": "Web: puerto 9000",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "extractor",
+            "args": ["--no-browser", "--port", "9000"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "PYTHONIOENCODING": "utf-8"
+            }
+        },
+        {
+            "name": "CLI: archivo abierto en el editor",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "extractor",
+            "args": ["${file}"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "PYTHONIOENCODING": "utf-8"
+            }
+        },
+        {
+            "name": "CLI: carpeta del proyecto (recursivo)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "extractor",
+            "args": ["${workspaceFolder}", "-r"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "PYTHONIOENCODING": "utf-8"
+            }
+        },
+        {
+            "name": "CLI: ruta personalizada...",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "extractor",
+            "args": ["${input:ruta}", "-r", "-f", "json"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "PYTHONIOENCODING": "utf-8"
+            }
+        },
+        {
+            "name": "Pruebas unitarias",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "unittest",
+            "args": ["discover", "-s", "tests", "-v"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "ruta",
+            "type": "promptString",
+            "description": "Ruta de archivo o carpeta a analizar",
+            "default": "${workspaceFolder}"
+        }
+    ]
+}

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extractor-metadatos"
+version = "2.0.0"
+description = "Extracción local de metadatos de documentos e imágenes, sin conexión."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "PeBe y DeepSeek", email = "soporte@diviac.invalid" },
+]
+keywords = ["metadatos", "exif", "docx", "xlsx", "pdf", "imagenes", "privacidad"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Natural Language :: Spanish",
+    "Topic :: Utilities",
+]
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0"]
+
+[project.scripts]
+extractor-metadatos = "extractor.cli:main"
+extractor-web = "extractor.web:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

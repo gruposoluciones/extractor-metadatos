@@ -1,0 +1,16 @@
+# Artefactos de compilación (regenerables con scripts/build.py)
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini

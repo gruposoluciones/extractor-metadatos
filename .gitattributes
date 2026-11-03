@@ -1,0 +1,17 @@
+# Normaliza finales de línea al contenido del repositorio.
+* text=auto eol=lf
+
+# Scripts de Windows: CRLF obligatorio.
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+
+# Scripts POSIX (macOS): LF obligatorio o el shebang deja de funcionar.
+*.sh        text eol=lf
+*.command   text eol=lf
+
+# Binarios: sin conversión ni diff de texto.
+*.ico    binary
+*.icns   binary
+*.png    binary
+*.jpg    binary
+*.exe    binary
