@@ -230,11 +230,21 @@ HTML_PAGE = r"""<!doctype html>
     // Devuelve el término de búsqueda activo ya normalizado.
     const term = () => $('#search').value.trim().toLowerCase();
 
-    // Extrae etiquetas clave resumidas de los metadatos.
-    function getChips(doc) {
-      if (!doc || typeof doc !== 'object') return '';
+    // Extrae etiquetas clave resumidas de los metadatos y de las fechas.
+    function getChips(rec) {
+      const doc = rec.document || {};
+      if (typeof doc !== 'object') return '';
       const map = { title: 'Título', creator: 'Creador', author: 'Autor', page_count: 'Páginas', sheet_count: 'Hojas', lines: 'Líneas', words: 'Palabras' };
-      return Object.keys(map).filter(k => doc[k] != null && doc[k] !== '').map(k => `<span class="chip"><b>${map[k]}:</b> ${esc(doc[k])}</span>`).join('');
+      const chips = Object.keys(map).filter(k => doc[k] != null && doc[k] !== '').map(k => `<span class="chip"><b>${map[k]}:</b> ${esc(doc[k])}</span>`);
+      const dates = [
+        ['Creado', rec.filesystem?.created],
+        ['Modificado', rec.filesystem?.modified],
+        ['Accedido', rec.filesystem?.accessed],
+        ['EXIF modificado', doc.exif?.modify_date || doc.exif?.datetime],
+        ['EXIF original', doc.exif?.datetime_original],
+        ['XMP modificado', doc.xmp?.modify_date || doc.xmp?.modified],
+      ].filter(([, value]) => value);
+      return chips.concat(dates.map(([label, value]) => `<span class="chip"><b>${label}:</b> ${esc(value)}</span>`)).join('');
     }
 
     // Construye la fila de tabla derivada de un registro.
@@ -242,13 +252,13 @@ HTML_PAGE = r"""<!doctype html>
       const row = document.createElement('tr');
       const size = rec.filesystem?.size_bytes != null ? fmtBytes(rec.filesystem.size_bytes) : '—';
       const fmt = (rec.format || rec.filesystem?.extension?.replace('.', '') || '—').toLowerCase();
-      const chips = getChips(rec.document);
+      const chips = getChips(rec);
       const hash = rec.filesystem?.sha256 || '';
       const badgeClass = IMAGES.has('.' + fmt) ? 'badge-img' : 'badge-' + fmt;
       const hashLine = hash
         ? `<div class="hash-line"><span class="hash-label">SHA-256</span><code class="hash-value" title="${esc(hash)}">${esc(hash)}</code><button class="btn-copy" type="button" data-action="copy-hash" data-sha="${esc(hash)}">Copiar</button></div>`
         : '';
-      const jsonStr = JSON.stringify(rec.document || {}, null, 2);
+      const jsonStr = JSON.stringify(rec, null, 2);
       row.dataset.search = JSON.stringify(rec).toLowerCase();
       row.innerHTML = `
         <td class="cell-name"><b>${esc(rec.filesystem?.name || rec.file || 'Archivo')}</b></td>
@@ -574,15 +584,15 @@ class RequestHandler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path != "/api/extract":
             return self.send_json(404, {"error": "Ruta no encontrada."})
         try:
+            ctype = self.headers.get("Content-Type", "")
+            if not ctype.lower().startswith("multipart/form-data"):
+                return self.send_json(415, {"error": "Se esperaba multipart/form-data."})
             try:
                 length = int(self.headers.get("Content-Length", 0))
             except (TypeError, ValueError):
                 return self.send_json(400, {"error": "Content-Length no válido."})
             if not (0 < length <= MAX_REQUEST_SIZE):
                 return self.send_json(413, {"error": "Archivo supera el límite de 40 MB."})
-            ctype = self.headers.get("Content-Type", "")
-            if not ctype.lower().startswith("multipart/form-data"):
-                return self.send_json(415, {"error": "Se esperaba multipart/form-data."})
             with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as body:
                 body.write(f"Content-Type: {ctype}\r\n\r\n".encode("latin-1", "replace"))
                 remaining = length

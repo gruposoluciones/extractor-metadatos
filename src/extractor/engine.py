@@ -28,6 +28,12 @@ def json_value(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, bytes):
         return value.hex()
+    if isinstance(value, dict):
+        if "x-default" in value:
+            return json_value(value["x-default"])
+        return {str(key): json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_value(item) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
@@ -69,6 +75,7 @@ def file_metadata(path: Path) -> dict[str, Any]:
         "mime_type": mimetypes.guess_type(path.name)[0],
         "size_bytes": stat.st_size,
         "sha256": sha256_digest(path),
+        "accessed": datetime.fromtimestamp(stat.st_atime).astimezone().isoformat(),
         "created": datetime.fromtimestamp(created).astimezone().isoformat(),
         "modified": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(),
     }
@@ -415,6 +422,37 @@ def pdf_metadata(path: Path) -> dict[str, Any]:
         result["landscape_pages"] = landscape_pages
         result["rotated_pages"] = rotated_pages
         result["attachment_count"] = len(reader.attachments)
+        try:
+            xmp = reader.xmp_metadata
+        except Exception:
+            xmp = None
+        if xmp is not None:
+            xmp_fields = {
+                "title": "dc_title",
+                "creator": "dc_creator",
+                "description": "dc_description",
+                "subject": "dc_subject",
+                "keywords": "pdf_keywords",
+                "producer": "pdf_producer",
+                "rights": "dc_rights",
+                "created": "xmp_create_date",
+                "modified": "xmp_modify_date",
+                "metadata_date": "xmp_metadata_date",
+                "creator_tool": "xmp_creator_tool",
+                "document_id": "xmpmm_document_id",
+                "instance_id": "xmpmm_instance_id",
+            }
+            xmp_result: dict[str, Any] = {}
+            for output_name, attribute in xmp_fields.items():
+                value = getattr(xmp, attribute, None)
+                if value in (None, "", [], {}):
+                    continue
+                if isinstance(value, (list, tuple)):
+                    xmp_result[output_name] = [json_value(item) for item in value]
+                else:
+                    xmp_result[output_name] = json_value(value)
+            if xmp_result:
+                result["xmp"] = xmp_result
         return result
     except (OSError, ValueError, EOFError, PdfReadError) as exc:
         raise RuntimeError(f"No se pudo leer el archivo PDF: {exc}") from exc

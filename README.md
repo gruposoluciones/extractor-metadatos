@@ -181,6 +181,8 @@ El módulo [`imagenes.py`](imagenes.py) reconoce **175 extensiones** agrupadas e
 
 Cada registro indica `detected_by` (**firma**, **extensión+estructura** o **extensión**) y, si algo falló, `warnings` con el motivo. El sistema **no declara soporte que no tiene**.
 
+Las fechas se exponen de forma explícita: `filesystem.accessed`, `filesystem.created` y `filesystem.modified`; en imágenes, `exif.modify_date`, `exif.datetime_original` y `exif.datetime_digitized`; y, cuando el archivo incluye un paquete XMP, `xmp.modify_date`, `xmp.create_date`, `xmp.metadata_date` y `xmp.creator_tool`. Los PDF añaden el bloque `xmp` con título, autoría, fechas y palabras clave cuando está presente.
+
 > **Privacidad**: las coordenadas GPS del EXIF se extraen porque forman parte del análisis, pero nunca salen de la máquina. En DICOM no se expone ningún identificador de paciente: solo se informa `patient_identity_present`.
 
 ## Distribución: Windows y macOS
@@ -251,7 +253,7 @@ En macOS el binario interno también acepta esos argumentos:
 python -m unittest discover -s tests -v
 ```
 
-21 pruebas que cubren el contrato de datos, el SHA-256, la inspección no destructiva, el descubrimiento de archivos, las columnas del CSV, los tres niveles de extracción de imágenes y las defensas del servidor local (CSP, Host/Origin y límites de carga). No requieren instalar el paquete (los módulos de prueba añaden `src` al `PYTHONPATH`).
+24 pruebas que cubren el contrato de datos, el SHA-256, la inspección no destructiva, el descubrimiento de archivos, las columnas del CSV, los tres niveles de extracción de imágenes, las fechas EXIF/XMP y las defensas del servidor local (CSP, Host/Origin y límites de carga). No requieren instalar el paquete (los módulos de prueba añaden `src` al `PYTHONPATH`).
 
 ---
 
@@ -269,6 +271,7 @@ Cada elemento analizado produce un objeto con el siguiente estándar:
     "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "size_bytes": 45210,
     "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "accessed": "2026-11-02T09:00:00-05:00",
     "created": "2026-11-01T09:12:00-05:00",
     "modified": "2026-11-02T07:45:00-05:00"
   },

@@ -137,7 +137,7 @@ Todo análisis generado por el sistema debe cumplir con la siguiente estructura 
 
 *Si ocurre un error en la extracción del documento, `"document"` será `{}` y `"error"` contendrá `<TipoDeExcepción>: <mensaje>` (por ejemplo `RuntimeError: No se pudo leer el archivo DOCX: ...`).*
 
-**Claves garantizadas**: `file`, `format`, `filesystem`, `document` y `error` existen siempre. `filesystem` contiene `name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `created` y `modified`. `created` usa `st_birthtime` cuando el sistema lo expone; en Windows, `st_ctime` es la fecha de creación, mientras que en POSIX sin `st_birthtime` corresponde al cambio de inodo.
+**Claves garantizadas**: `file`, `format`, `filesystem`, `document` y `error` existen siempre. `filesystem` contiene `name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `accessed`, `created` y `modified`. `created` usa `st_birthtime` cuando el sistema lo expone; en Windows, `st_ctime` es la fecha de creación, mientras que en POSIX sin `st_birthtime` corresponde al cambio de inodo.
 
 **Claves de `document` por formato** (las ausentes se omiten, nunca se emiten vacías):
 
@@ -145,7 +145,7 @@ Todo análisis generado por el sistema debe cumplir con la siguiente estructura 
 
 | Nivel | Campos adicionales |
 | :--- | :--- |
-| `completa` (Pillow) | `mode`, `bit_depth`, `has_alpha`, `animated`, `frames`, `dpi`, `compression`, `progressive`, `interlaced`, `icc_profile{present,bytes,description}`, `exif{make,model,lens_model,software,artist,datetime,datetime_original,orientation,exposure_time,f_number,iso,focal_length,gps{latitude,longitude,altitude}}`, `icon_sizes[]`, `loop`, `frame_duration_ms`, `nine_patch` |
+| `completa` (Pillow) | `mode`, `bit_depth`, `has_alpha`, `animated`, `frames`, `dpi`, `compression`, `progressive`, `interlaced`, `icc_profile{present,bytes,description}`, `exif{image_description,make,model,lens_make,lens_model,software,artist,copyright,datetime,modify_date,datetime_original,datetime_digitized,offset_time,offset_time_original,offset_time_digitized,subsec_time,subsec_time_original,subsec_time_digitized,orientation,exposure_time,exposure_program,exposure_bias,f_number,max_aperture,iso,metering_mode,light_source,flash,focal_length,focal_length_35mm,color_space,white_balance,scene_capture_type,user_comment,camera_owner,body_serial_number,image_unique_id,gps{latitude,longitude,altitude,altitude_ref,direction,direction_ref,status,map_datum,processing_method,date_stamp,time_stamp}}`, `xmp{title,creator,description,subject,keywords,rights,modify_date,create_date,metadata_date,creator_tool,datetime_original}`, `icon_sizes[]`, `loop`, `frame_duration_ms`, `nine_patch` |
 | `parcial` (contenedor) | `brand`, `compatible_brands[]`, `codec` (ISOBMFF); `vector`, `svg_version`, `view_box`, `element_count`, `has_script`, `external_references`, `title` (SVG); `make`, `model`, `datetime`, `software`, `compression` (IFD TIFF/RAW); `modality`, `rows`, `columns`, `bits_allocated`, `patient_identity_present` (DICOM); `dimensions`, `datatype`, `voxel_size[]`, `slices` (NIfTI); `telescope`, `instrument`, `observation_date` (FITS); `format_fourcc`, `mip_levels` (texturas); `bitplanes`, `zip_entries`, `declared_mime`, `has_preview`, `layer_files`, `version`, `bounding_box[]`, `width_pt`, `height_pt` |
 
 **Documentos**:
@@ -157,7 +157,7 @@ Todo análisis generado por el sistema debe cumplir con la siguiente estructura 
 | `.doc` | `title`, `subject`, `author`, `keywords`, `comments`, `template`, `last_modified_by`, `revision`, `created`, `modified`, `creating_application`, `pages`, `words`, `characters`, `compound_streams[]`, `compound_stream_count` |
 | `.xls` (BIFF) | `sheet_count`, `hidden_sheet_count`, `sheets[]`, `date_mode` |
 | `.xls` (SpreadsheetML) | `title`, `subject`, `author`, `keywords`, `description`, `last_modified_by`, `created`, `modified`, `revision`, `category`, `company`, `manager`, `sheet_count`, `hidden_sheet_count`, `sheets[]` |
-| `.pdf` | `pages`, `encrypted`, `pdf_version`, `title`, `author`, `subject`, `creator`, `producer`, `created`, `modified`, `keywords`, `trapped`, `page_sizes{}`, `landscape_pages`, `rotated_pages`, `attachment_count` |
+| `.pdf` | `pages`, `encrypted`, `pdf_version`, `title`, `author`, `subject`, `creator`, `producer`, `created`, `modified`, `keywords`, `trapped`, `page_sizes{}`, `landscape_pages`, `rotated_pages`, `attachment_count`, `xmp{title,creator,description,subject,keywords,producer,rights,created,modified,metadata_date,creator_tool,document_id,instance_id}` |
 | `.txt` | `encoding`, `characters`, `words`, `lines`, `nonempty_lines`, `has_bom` |
 
 `sheets[]` usa la forma `{name, visibility, rows, columns}`; `section_layouts[]` usa `{width_inches, height_inches, orientation}`; `compound_streams[]` usa `{path, size_bytes}`. En `.xls` SpreadsheetML `rows` y `columns` conservan el valor textual del atributo o `null` si falta.

@@ -311,32 +311,43 @@ def _ratio(value: Any) -> float | None:
         return None
 
 
+def _exif_value(exif: Any, sub: Any, tag: int) -> Any:
+    """Devuelve un tag desde el IFD principal o desde el sub-IFD EXIF."""
+    value = exif.get(tag)
+    if value in (None, ""):
+        value = sub.get(tag)
+    return value
+
+
 def _exif_map(exif: Any) -> dict[str, Any]:
     """Extrae los campos EXIF de interés y normaliza valores."""
     if not exif:
         return {}
+    try:
+        sub = exif.get_ifd(0x8769) or {}
+    except (KeyError, AttributeError):
+        sub = {}
     tags = {
-        271: "make", 272: "model", 274: "orientation", 305: "software",
-        306: "datetime", 315: "artist", 33432: "copyright",
-    }
-    exif_ifd_tags = {
-        33434: "exposure_time", 33437: "f_number", 34855: "iso",
-        36867: "datetime_original", 36868: "datetime_digitized",
-        37386: "focal_length", 42036: "lens_model",
+        270: "image_description", 271: "make", 272: "model", 274: "orientation",
+        305: "software", 306: "datetime", 315: "artist", 33432: "copyright",
+        33434: "exposure_time", 33437: "f_number", 34850: "exposure_program",
+        34855: "iso", 36867: "datetime_original", 36868: "datetime_digitized",
+        36880: "offset_time", 36881: "offset_time_original", 36882: "offset_time_digitized",
+        37380: "exposure_bias", 37381: "max_aperture", 37383: "metering_mode",
+        37384: "light_source", 37385: "flash", 37386: "focal_length",
+        37510: "user_comment", 37520: "subsec_time", 37521: "subsec_time_original",
+        37522: "subsec_time_digitized", 40961: "color_space", 41987: "white_balance",
+        41989: "focal_length_35mm", 41990: "scene_capture_type", 42016: "image_unique_id",
+        42032: "camera_owner", 42033: "body_serial_number", 42035: "lens_make",
+        42036: "lens_model",
     }
     result: dict[str, Any] = {}
     for tag, name in tags.items():
-        value = exif.get(tag)
+        value = _exif_value(exif, sub, tag)
         if value not in (None, ""):
             result[name] = _clean(value)
-    try:
-        sub = exif.get_ifd(0x8769)
-    except (KeyError, AttributeError):
-        sub = {}
-    for tag, name in exif_ifd_tags.items():
-        value = sub.get(tag)
-        if value not in (None, ""):
-            result[name] = _clean(value)
+    if "datetime" in result:
+        result["modify_date"] = result["datetime"]
     gps = _gps(exif)
     if gps:
         result["gps"] = gps
@@ -344,7 +355,7 @@ def _exif_map(exif: Any) -> dict[str, Any]:
 
 
 def _gps(exif: Any) -> dict[str, Any]:
-    """Convierte las coordenadas EXIF GPS a grados decimales."""
+    """Convierte las coordenadas EXIF GPS a grados decimales y añade fecha/hora."""
     try:
         ifd = exif.get_ifd(0x8825)
     except (KeyError, AttributeError):
@@ -371,13 +382,39 @@ def _gps(exif: Any) -> dict[str, Any]:
     if altitude is not None:
         height = _ratio(altitude)
         if height is not None:
+            if ifd.get(5) in (1, b"\x01"):
+                height = -height
             result["altitude"] = height
+    for tag, name in {
+        5: "altitude_ref", 9: "status", 16: "direction_ref", 17: "direction",
+        18: "map_datum", 27: "processing_method",
+    }.items():
+        value = ifd.get(tag)
+        if value not in (None, ""):
+            result[name] = _clean(value)
+    date_stamp = ifd.get(29)
+    if date_stamp:
+        result["date_stamp"] = _clean(date_stamp)
+    clock = ifd.get(7)
+    if clock:
+        try:
+            hours, minutes, seconds = (float(v) for v in clock)
+            result["time_stamp"] = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+        except (TypeError, ValueError):
+            pass
     return result
 
 
 def _clean(value: Any) -> Any:
     """Normaliza tipos de Pillow (racionales, tuplas de bytes) a JSON."""
     if isinstance(value, bytes):
+        for prefix, encoding in (
+            (b"ASCII\x00\x00\x00", "utf-8"),
+            (b"UNICODE\x00", "utf-16"),
+            (b"JIS\x00\x00\x00\x00\x00", "shift_jis"),
+        ):
+            if value.startswith(prefix):
+                return value[len(prefix):].decode(encoding, "replace").strip("\x00").strip()
         return value.decode("utf-8", "replace").strip("\x00").strip()
     if isinstance(value, (tuple, list)):
         return [_clean(item) for item in value]
@@ -385,6 +422,52 @@ def _clean(value: Any) -> Any:
         return value
     converted = _ratio(value)
     return converted if converted is not None else str(value)
+
+
+def _xmp(raw: Any) -> dict[str, Any]:
+    """Extrae propiedades XMP básicas de un paquete RDF/XML."""
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8", "replace")
+    if not isinstance(raw, (bytes, bytearray)) or not raw or len(raw) > 2 * 1024 * 1024:
+        return {}
+    raw = bytes(raw)
+    start = raw.find(b"<x:xmpmeta")
+    end = raw.rfind(b"</x:xmpmeta>")
+    if start != -1 and end != -1:
+        raw = raw[start:end + len(b"</x:xmpmeta>")]
+    try:
+        from defusedxml import ElementTree
+
+        root = ElementTree.fromstring(raw)
+    except Exception:
+        return {}
+    names = {
+        "ModifyDate": "modify_date", "CreateDate": "create_date",
+        "MetadataDate": "metadata_date", "CreatorTool": "creator_tool",
+        "DateTimeOriginal": "datetime_original", "title": "title",
+        "creator": "creator", "description": "description",
+        "subject": "subject", "Keywords": "keywords", "Rights": "rights",
+    }
+    result: dict[str, Any] = {}
+    for element in root.iter():
+        for attribute, value in element.attrib.items():
+            key = names.get(attribute.rsplit("}", 1)[-1])
+            if key and key not in result and value.strip():
+                result[key] = value.strip()
+        name = element.tag.rsplit("}", 1)[-1]
+        key = names.get(name)
+        if not key or key in result:
+            continue
+        values = [
+            child.text.strip()
+            for child in element.iter()
+            if child.tag.rsplit("}", 1)[-1] == "li" and child.text and child.text.strip()
+        ]
+        text = values or [(element.text or "").strip()]
+        text = [item for item in text if item]
+        if text:
+            result[key] = text[0] if len(text) == 1 else text
+    return result
 
 
 def _icc(profile: bytes | None) -> dict[str, Any]:
@@ -441,6 +524,9 @@ def _pillow(path: Path) -> dict[str, Any]:
         exif = _exif_map(image.getexif())
         if exif:
             document["exif"] = exif
+        xmp = _xmp(info.get("xmp"))
+        if xmp:
+            document["xmp"] = xmp
         if image.format:
             document.setdefault("container_format", image.format)
         return document
@@ -622,6 +708,8 @@ def _tiff_ifd(path: Path) -> dict[str, Any]:
                         42036: "lens_model"}[tag]] = text
     if "width" in values and "height" in values:
         values["megapixels"] = round(values["width"] * values["height"] / 1_000_000, 3)
+    if "datetime" in values:
+        values["modify_date"] = values["datetime"]
     values["byte_order"] = "little" if endian == "little" else "big"
     return values
 

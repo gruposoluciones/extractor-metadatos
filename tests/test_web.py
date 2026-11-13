@@ -78,12 +78,12 @@ class WebTest(unittest.TestCase):
         self.assertEqual(response.status, 403)
 
     def test_origen_ajeno_rechazado(self) -> None:
-        body, ctype = multipart_body("nota.txt", b"uno\n")
+        _, ctype = multipart_body("nota.txt", b"uno\n")
         status, _, _ = self.request(
             "POST",
             "/api/extract",
             {"Host": self.host, "Content-Type": ctype, "Origin": "http://evil.example"},
-            body,
+            b"",
         )
         self.assertEqual(status, 403)
 
@@ -105,7 +105,7 @@ class WebTest(unittest.TestCase):
             "POST",
             "/api/extract",
             {"Host": self.host, "Content-Type": "application/json"},
-            b"{}",
+            b"",
         )
         self.assertEqual(status, 415)
 

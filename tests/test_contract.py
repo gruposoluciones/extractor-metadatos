@@ -64,7 +64,7 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(set(record), {"file", "format", "filesystem", "document", "error"})
         self.assertEqual(
             set(record["filesystem"]),
-            {"name", "extension", "mime_type", "size_bytes", "sha256", "created", "modified"},
+            {"name", "extension", "mime_type", "size_bytes", "sha256", "accessed", "created", "modified"},
         )
         self.assertIsNone(record["error"])
 

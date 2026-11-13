@@ -92,6 +92,22 @@ class ImagesTest(unittest.TestCase):
         self.assertEqual(document["format"], "BPG")
         self.assertEqual(document["extraction"], "solo_firma")
 
+    def test_exif_fechas_y_camara(self) -> None:
+        from PIL import Image
+
+        path = self.tmp / "camara.jpg"
+        exif = Image.Exif()
+        exif[271] = "Canon"
+        exif[272] = "EOS R6"
+        exif[306] = "2026:11:01 10:20:30"
+        exif[36867] = "2026:10:31 08:00:00"
+        exif[42036] = "RF50mm F1.8 STM"
+        Image.new("RGB", (10, 10)).save(path, exif=exif)
+        document = extract_file(path)["document"]
+        self.assertEqual(document["exif"]["modify_date"], "2026:11:01 10:20:30")
+        self.assertEqual(document["exif"]["datetime_original"], "2026:10:31 08:00:00")
+        self.assertEqual(document["exif"]["lens_model"], "RF50mm F1.8 STM")
+
     def test_registro_de_extensiones(self) -> None:
         self.assertGreaterEqual(len(imagenes.IMAGE_EXTENSIONS), 170)
         for extension in (".heic", ".cr2", ".svg", ".psd", ".dcm", ".ktx"):
