@@ -88,9 +88,9 @@ d:\PyInstitucional\metadatos\
 
 ### 3.3. Servidor e Interfaz Web (`src/extractor/web.py`)
 * **Arquitectura de servidor**: `ThreadingHTTPServer` ejecutándose en un hilo demonio local (`127.0.0.1`) con capacidad de selección de puerto dinámico.
-* **Seguridad HTTP**: Cabeceras estrictas (`X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Cache-Control: no-store`).
-* **Límites de carga**: `MAX_FILE_SIZE` = 40 MB por archivo y `MAX_REQUEST_SIZE` = 40 MB + 256 KB para absorber las cabeceras del cuerpo multipart. La UI valida antes de enviar; el servidor revalida y responde `413`.
-* **Extracción efímera**: Recepción multipart con `email.parser.BytesParser`, almacenamiento transitorio en `tempfile.NamedTemporaryFile`, ejecución del motor y destrucción asegurada mediante bloques `try ... finally`.
+* **Seguridad HTTP**: Cabeceras estrictas (`X-Content-Type-Options: nosniff`, `Content-Security-Policy` con `nonce` por respuesta, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` y `Cache-Control: no-store`). Se validan `Host`, `Origin` y `Sec-Fetch-Site` para rechazar peticiones de otros orígenes.
+* **Límites de carga**: `MAX_FILE_SIZE` = 40 MB por archivo, `MAX_REQUEST_SIZE` = 40 MB + 256 KB para absorber las cabeceras del cuerpo multipart, `MAX_CONCURRENT_REQUESTS` = 4 y `REQUEST_TIMEOUT_SECONDS` = 30. La UI valida antes de enviar; el servidor revalida y responde `413`.
+* **Extracción efímera**: Recepción multipart transmitida por bloques a un archivo temporal esponjado, almacenamiento transitorio en un directorio propio de la ejecución y destrucción asegurada mediante `try ... finally` y `atexit`.
 * **Frontend reactivo**: Código HTML5/CSS3 autocontenido (sin frameworks externos ni descargas CDN), diseño fluido con CSS Grid/Flexbox, soporte para arrastrar y soltar (*drag & drop*), filtrado en memoria y descarga dinámica. Las extensiones admitidas y el límite de tamaño **se inyectan desde `extractor.engine.SUPPORTED_EXTENSIONS` y `extractor.config.MAX_FILE_SIZE`**, nunca se duplican como literales en el JavaScript. El SHA-256 de cada fila se copia en texto plano mediante `navigator.clipboard`, con respaldo a `document.execCommand` cuando la API moderna no está disponible.
 * **Identidad y marca**: `APP_NAME`, `ORGANIZATION` y `AUTHORS` son las únicas constantes de identidad del producto; alimentan el `<title>`, el encabezado, el pie y el banner de consola. Un cambio de nombre se hace solo ahí, nunca repitiendo literales en el HTML.
 
@@ -137,7 +137,7 @@ Todo análisis generado por el sistema debe cumplir con la siguiente estructura 
 
 *Si ocurre un error en la extracción del documento, `"document"` será `{}` y `"error"` contendrá `<TipoDeExcepción>: <mensaje>` (por ejemplo `RuntimeError: No se pudo leer el archivo DOCX: ...`).*
 
-**Claves garantizadas**: `file`, `format`, `filesystem`, `document` y `error` existen siempre. `filesystem` contiene `name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `created` y `modified`.
+**Claves garantizadas**: `file`, `format`, `filesystem`, `document` y `error` existen siempre. `filesystem` contiene `name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `created` y `modified`. `created` usa `st_birthtime` cuando el sistema lo expone; en Windows, `st_ctime` es la fecha de creación, mientras que en POSIX sin `st_birthtime` corresponde al cambio de inodo.
 
 **Claves de `document` por formato** (las ausentes se omiten, nunca se emiten vacías):
 

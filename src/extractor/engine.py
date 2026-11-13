@@ -61,13 +61,15 @@ def sha256_digest(path: Path) -> str:
 def file_metadata(path: Path) -> dict[str, Any]:
     """Obtiene nombre, tipo MIME, tamaño, huella SHA-256 y fechas del archivo."""
     stat = path.stat()
+    # st_birthtime es la creación real donde existe; en Windows se usa ctime.
+    created = getattr(stat, "st_birthtime", stat.st_ctime)
     return {
         "name": path.name,
         "extension": path.suffix.lower(),
         "mime_type": mimetypes.guess_type(path.name)[0],
         "size_bytes": stat.st_size,
         "sha256": sha256_digest(path),
-        "created": datetime.fromtimestamp(stat.st_ctime).astimezone().isoformat(),
+        "created": datetime.fromtimestamp(created).astimezone().isoformat(),
         "modified": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(),
     }
 
