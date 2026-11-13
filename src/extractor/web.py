@@ -4,19 +4,62 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import html
 import json
+import logging
+import secrets
+import shutil
 import tempfile
+import threading
+import time
 import webbrowser
 from email.parser import BytesParser
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
-from .config import APP_NAME, AUTHORS, MAX_FILE_SIZE, MAX_REQUEST_SIZE, ORGANIZATION
+from .config import (
+    APP_NAME,
+    AUTHORS,
+    MAX_CONCURRENT_REQUESTS,
+    MAX_FILE_SIZE,
+    MAX_REQUEST_SIZE,
+    ORGANIZATION,
+    REQUEST_TIMEOUT_SECONDS,
+    __version__,
+)
 from .engine import SUPPORTED_EXTENSIONS, extract_file, is_supported_name
 from .imagenes import COMPOUND_SUFFIXES, IMAGE_EXTENSIONS
+
+LOGGER = logging.getLogger(__name__)
+
+_TEMP_PREFIX = "extractor-metadatos-"
+_TEMP_ROOT: Path | None = None
+
+
+def _purge_stale_temp_dirs(max_age_seconds: int = 86400) -> None:
+    """Elimina directorios temporales abandonados por ejecuciones anteriores."""
+    cutoff = time.time() - max_age_seconds
+    for candidate in Path(tempfile.gettempdir()).glob(f"{_TEMP_PREFIX}*"):
+        try:
+            if candidate.is_dir() and candidate.stat().st_mtime < cutoff:
+                shutil.rmtree(candidate, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _temp_root() -> Path:
+    """Devuelve el directorio temporal de la ejecución, creándolo una sola vez."""
+    global _TEMP_ROOT
+    if _TEMP_ROOT is None:
+        _purge_stale_temp_dirs()
+        _TEMP_ROOT = Path(tempfile.mkdtemp(prefix=_TEMP_PREFIX))
+        atexit.register(shutil.rmtree, _TEMP_ROOT, ignore_errors=True)
+    return _TEMP_ROOT
+
 
 
 HTML_PAGE = r"""<!doctype html>
@@ -25,7 +68,7 @@ HTML_PAGE = r"""<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>__APP_NAME__</title>
-  <style>
+  <style nonce="__NONCE__">
     :root {
       --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #0f172a; --muted: #64748b;
       --primary: #2563eb; --primary-hover: #1d4ed8; --danger: #ef4444; --success: #10b981;
@@ -101,6 +144,12 @@ HTML_PAGE = r"""<!doctype html>
     .footer .brand { font-weight: 800; letter-spacing: .14em; color: var(--text); }
     .footer .sep { color: #cbd5e1; }
     .footer .authors { letter-spacing: .02em; }
+    .hint { color: var(--muted); font-size: .85rem; margin-top: -6px; }
+    .hidden-input { display: none; }
+    .stat-ok { color: var(--success); }
+    .stat-err { color: var(--danger); }
+    .cell-name { max-width: 260px; overflow-wrap: anywhere; }
+    .clipboard-helper { position: fixed; top: -1000px; opacity: 0; }
     @media (max-width: 640px) { .toolbar { flex-direction: column; align-items: stretch; } .search-box { max-width: 100%; } }
   </style>
 </head>
@@ -115,31 +164,31 @@ HTML_PAGE = r"""<!doctype html>
       <div id="drop" class="dropzone">
         <span class="drop-icon">📂</span>
         <b>Arrastra y suelta tus archivos o carpetas aquí</b>
-        <p style="color:var(--muted);font-size:.85rem;margin-top:-6px;">Hasta __MAX_MB__ MB por archivo</p>
+        <p class="hint">Hasta __MAX_MB__ MB por archivo</p>
         <div class="btn-group">
           <label class="btn btn-primary" for="files">Elegir Archivos</label>
           <label class="btn btn-sec" for="folder">Elegir Carpeta</label>
         </div>
         <div class="tags">__TAGS__</div>
       </div>
-      <input id="files" type="file" multiple accept="__ACCEPT__" style="display:none">
-      <input id="folder" type="file" multiple webkitdirectory directory style="display:none">
+      <input id="files" type="file" multiple accept="__ACCEPT__" class="hidden-input">
+      <input id="folder" type="file" multiple webkitdirectory directory class="hidden-input">
       <div id="progress-track" class="progress-track" hidden><div id="progress-bar" class="progress-bar"></div></div>
       <div id="status" class="status-text"></div>
     </main>
     <section class="card">
       <div class="stats-bar">
         <div class="stat-pill">Archivos: <b id="stat-total">0</b></div>
-        <div class="stat-pill">Correctos: <b id="stat-ok" style="color:var(--success)">0</b></div>
-        <div class="stat-pill">Errores: <b id="stat-err" style="color:var(--danger)">0</b></div>
+        <div class="stat-pill">Correctos: <b id="stat-ok" class="stat-ok">0</b></div>
+        <div class="stat-pill">Errores: <b id="stat-err" class="stat-err">0</b></div>
         <div class="stat-pill">Tamaño Total: <b id="stat-size">0 B</b></div>
       </div>
       <div class="toolbar">
         <input id="search" class="search-box" type="search" placeholder="Buscar por nombre o metadato…" disabled>
         <div class="btn-group">
-          <button id="btn-json" class="btn btn-sec" onclick="exportData('json')" disabled>Exportar JSON</button>
-          <button id="btn-csv" class="btn btn-sec" onclick="exportData('csv')" disabled>Exportar CSV</button>
-          <button id="btn-clear" class="btn btn-danger" onclick="clearAll()" disabled>Limpiar</button>
+          <button id="btn-json" class="btn btn-sec" disabled>Exportar JSON</button>
+          <button id="btn-csv" class="btn btn-sec" disabled>Exportar CSV</button>
+          <button id="btn-clear" class="btn btn-danger" disabled>Limpiar</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -157,7 +206,7 @@ HTML_PAGE = r"""<!doctype html>
       <span class="authors">__AUTHORS__</span>
     </footer>
   </div>
-  <script>
+  <script nonce="__NONCE__">
     const ALLOWED = new Set(__EXTENSIONS__);
     const IMAGES = new Set(__IMAGE_EXTENSIONS__);
     const COMPOUND = __COMPOUND__;
@@ -197,12 +246,12 @@ HTML_PAGE = r"""<!doctype html>
       const hash = rec.filesystem?.sha256 || '';
       const badgeClass = IMAGES.has('.' + fmt) ? 'badge-img' : 'badge-' + fmt;
       const hashLine = hash
-        ? `<div class="hash-line"><span class="hash-label">SHA-256</span><code class="hash-value" title="${esc(hash)}">${esc(hash)}</code><button class="btn-copy" type="button" data-sha="${esc(hash)}" onclick="copyHash(this)">Copiar</button></div>`
+        ? `<div class="hash-line"><span class="hash-label">SHA-256</span><code class="hash-value" title="${esc(hash)}">${esc(hash)}</code><button class="btn-copy" type="button" data-action="copy-hash" data-sha="${esc(hash)}">Copiar</button></div>`
         : '';
       const jsonStr = JSON.stringify(rec.document || {}, null, 2);
       row.dataset.search = JSON.stringify(rec).toLowerCase();
       row.innerHTML = `
-        <td style="max-width:260px;overflow-wrap:anywhere;"><b>${esc(rec.filesystem?.name || rec.file || 'Archivo')}</b></td>
+        <td class="cell-name"><b>${esc(rec.filesystem?.name || rec.file || 'Archivo')}</b></td>
         <td><span class="badge ${badgeClass}">${esc(fmt.toUpperCase())}</span></td>
         <td class="num">${size}</td>
         <td>
@@ -212,7 +261,7 @@ HTML_PAGE = r"""<!doctype html>
             <details class="meta-details">
               <summary>Ver JSON completo</summary>
               <div class="json-wrap">
-                <button class="btn-xs" onclick="copyText(this.nextElementSibling.textContent, this)">Copiar</button>
+                <button class="btn-xs" type="button" data-action="copy-json">Copiar</button>
                 <pre class="json-pre">${esc(jsonStr)}</pre>
               </div>
             </details>`}
@@ -273,7 +322,7 @@ HTML_PAGE = r"""<!doctype html>
       } catch {
         const area = document.createElement('textarea');
         area.value = txt;
-        area.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+        area.className = 'clipboard-helper';
         document.body.appendChild(area);
         area.select();
         let done = false;
@@ -370,14 +419,31 @@ HTML_PAGE = r"""<!doctype html>
     $('#files').addEventListener('change', e => processFiles(e.target.files));
     $('#folder').addEventListener('change', e => processFiles(e.target.files));
     $('#search').addEventListener('input', applyFilter);
+    $('#btn-json').addEventListener('click', () => exportData('json'));
+    $('#btn-csv').addEventListener('click', () => exportData('csv'));
+    $('#btn-clear').addEventListener('click', clearAll);
+    tbody.addEventListener('click', event => {
+      const btn = event.target.closest?.('button[data-action]');
+      if (!btn) return;
+      if (btn.dataset.action === 'copy-hash') copyText(btn.dataset.sha, btn);
+      else if (btn.dataset.action === 'copy-json') copyText(btn.nextElementSibling?.textContent || '', btn);
+    });
   </script>
 </body>
 </html>
 """
 
 
-def render_page() -> str:
-    """Inyecta extensiones, límites y grupos de imagen en la plantilla."""
+CSP_PAGE = (
+    "default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+    "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
+    "form-action 'none'; frame-ancestors 'none'"
+)
+CSP_DEFAULT = "default-src 'none'; frame-ancestors 'none'"
+
+
+def render_page(nonce: str) -> str:
+    """Inyecta extensiones, límites, grupos de imagen y nonce CSP en la plantilla."""
     extensions = sorted(SUPPORTED_EXTENSIONS)
     images = sorted(IMAGE_EXTENSIONS)
     documents = [ext for ext in extensions if ext not in IMAGE_EXTENSIONS]
@@ -395,31 +461,83 @@ def render_page() -> str:
         .replace("__IMAGE_EXTENSIONS__", json.dumps(images))
         .replace("__MAX_BYTES__", str(MAX_FILE_SIZE))
         .replace("__MAX_MB__", str(MAX_FILE_SIZE // (1024 * 1024)))
+        .replace("__NONCE__", nonce)
         .replace("__APP_NAME__", html.escape(APP_NAME))
         .replace("__ORG__", html.escape(ORGANIZATION))
         .replace("__AUTHORS__", html.escape(AUTHORS))
     )
 
 
-PAGE = render_page()
-
-
 class LocalServer(ThreadingHTTPServer):
-    """Servidor HTTP multihilo local."""
+    """Servidor HTTP multihilo local con límite de concurrencia."""
     daemon_threads, allow_reuse_address = True, True
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._slots = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        """Admite la conexión solo si hay un hueco libre."""
+        if not self._slots.acquire(blocking=False):
+            try:
+                request.sendall(
+                    b"HTTP/1.1 503 Service Unavailable\r\n"
+                    b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+            except OSError:
+                pass
+            finally:
+                self.close_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def shutdown_request(self, request: Any) -> None:
+        """Libera el hueco de concurrencia al cerrar la conexión."""
+        try:
+            super().shutdown_request(request)
+        finally:
+            self._slots.release()
 
 
 class RequestHandler(BaseHTTPRequestHandler):
     """Manejador de rutas y extracción de metadatos."""
-    server_version = "DIVIAC-MetaDatos/2.0"
+    server_version = f"{ORGANIZATION}-MetaDatos/{__version__}"
+    timeout = REQUEST_TIMEOUT_SECONDS
 
     def end_headers(self) -> None:
         """Añade cabeceras de seguridad y control de caché."""
-        for k, v in [("X-Content-Type-Options", "nosniff"),
-                     ("Content-Security-Policy", "default-src 'self' 'unsafe-inline'"),
-                     ("Cache-Control", "no-store")]:
-            self.send_header(k, v)
+        nonce = getattr(self, "_nonce", None)
+        headers = [
+            ("X-Content-Type-Options", "nosniff"),
+            ("Content-Security-Policy", CSP_PAGE.format(nonce=nonce) if nonce else CSP_DEFAULT),
+            ("X-Frame-Options", "DENY"),
+            ("Referrer-Policy", "no-referrer"),
+            ("Permissions-Policy", "geolocation=(), camera=(), microphone=()"),
+            ("Cache-Control", "no-store"),
+        ]
+        for key, value in headers:
+            self.send_header(key, value)
         super().end_headers()
+
+    def _allowed_hosts(self) -> set[str]:
+        """Hosts admitidos para el servidor local."""
+        port = self.server.server_address[1]
+        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        if port == 80:
+            hosts |= {"127.0.0.1", "localhost"}
+        return hosts
+
+    def _request_allowed(self) -> bool:
+        """Valida Host, Origin y Sec-Fetch-Site de la petición."""
+        if self.headers.get("Host", "") not in self._allowed_hosts():
+            return False
+        site = self.headers.get("Sec-Fetch-Site")
+        if site is not None and site not in ("same-origin", "none"):
+            return False
+        origin = self.headers.get("Origin")
+        return origin is None or origin in {
+            f"http://{host}" for host in self._allowed_hosts()
+        }
 
     def send_json(self, status: int, data: dict) -> None:
         """Serializa y despacha una respuesta JSON."""
@@ -432,9 +550,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Sirve la página web principal o estado de salud."""
+        if not self._request_allowed():
+            return self.send_json(403, {"error": "Origen no permitido."})
+        self._nonce = None
         path = urlsplit(self.path).path
         if path == "/":
-            body = PAGE.encode("utf-8")
+            self._nonce = secrets.token_urlsafe(16)
+            body = render_page(self._nonce).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -447,26 +569,50 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Procesa el archivo subido y extrae sus metadatos."""
+        if not self._request_allowed():
+            return self.send_json(403, {"error": "Origen no permitido."})
         if urlsplit(self.path).path != "/api/extract":
             return self.send_json(404, {"error": "Ruta no encontrada."})
         try:
-            length = int(self.headers.get("Content-Length", 0))
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except (TypeError, ValueError):
+                return self.send_json(400, {"error": "Content-Length no válido."})
             if not (0 < length <= MAX_REQUEST_SIZE):
                 return self.send_json(413, {"error": "Archivo supera el límite de 40 MB."})
             ctype = self.headers.get("Content-Type", "")
-            msg = BytesParser(policy=default).parsebytes(f"Content-Type: {ctype}\r\n\r\n".encode() + self.rfile.read(length))
-            part = next((p for p in msg.iter_parts() if p.get_filename()), None)
-            if not part:
-                return self.send_json(400, {"error": "No se recibió un archivo válido."})
-            filename = Path(part.get_filename().replace("\\", "/")).name
-            ext = next(
-                (suffix for suffix in COMPOUND_SUFFIXES if filename.lower().endswith(suffix)),
-                Path(filename).suffix.lower(),
-            )
-            if not is_supported_name(filename):
-                return self.send_json(415, {"error": f"Formato no compatible: {ext}"})
-            data = part.get_payload(decode=True) or b""
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            if not ctype.lower().startswith("multipart/form-data"):
+                return self.send_json(415, {"error": "Se esperaba multipart/form-data."})
+            with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as body:
+                body.write(f"Content-Type: {ctype}\r\n\r\n".encode("latin-1", "replace"))
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 64 * 1024))
+                    if not chunk:
+                        return self.send_json(400, {"error": "Cuerpo incompleto."})
+                    body.write(chunk)
+                    remaining -= len(chunk)
+                body.seek(0)
+                msg = BytesParser(policy=default).parse(body)
+                part = next((p for p in msg.iter_parts() if p.get_filename()), None)
+                if not part:
+                    return self.send_json(400, {"error": "No se recibió un archivo válido."})
+                raw_name = part.get_filename() or ""
+                filename = Path(raw_name.replace("\\", "/")).name
+                if not filename:
+                    return self.send_json(400, {"error": "Nombre de archivo no válido."})
+                ext = next(
+                    (suffix for suffix in COMPOUND_SUFFIXES if filename.lower().endswith(suffix)),
+                    Path(filename).suffix.lower(),
+                )
+                if not is_supported_name(filename):
+                    return self.send_json(415, {"error": f"Formato no compatible: {ext}"})
+                data = part.get_payload(decode=True) or b""
+            if not data:
+                return self.send_json(400, {"error": "El archivo está vacío."})
+            if len(data) > MAX_FILE_SIZE:
+                return self.send_json(413, {"error": "Archivo supera el límite de 40 MB."})
+            with tempfile.NamedTemporaryFile(suffix=ext, dir=_temp_root(), delete=False) as tmp:
                 tmp.write(data)
                 tmp_path = Path(tmp.name)
             try:
@@ -475,8 +621,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_json(200, res)
             finally:
                 tmp_path.unlink(missing_ok=True)
-        except Exception as exc:
-            self.send_json(500, {"error": f"Error interno: {exc}"})
+        except Exception:
+            LOGGER.exception("Error interno al procesar %s", self.path)
+            try:
+                self.send_json(500, {"error": "Error interno al procesar el archivo."})
+            except OSError:
+                pass
 
     def log_message(self, fmt: str, *args: object) -> None:
         """Registra logs del servidor en consola."""

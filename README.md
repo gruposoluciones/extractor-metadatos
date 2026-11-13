@@ -251,7 +251,7 @@ En macOS el binario interno también acepta esos argumentos:
 python -m unittest discover -s tests -v
 ```
 
-15 pruebas que cubren el contrato de datos, el SHA-256, la inspección no destructiva, el descubrimiento de archivos, las columnas del CSV y los tres niveles de extracción de imágenes. No requieren instalar el paquete (los módulos de prueba añaden `src` al `PYTHONPATH`).
+21 pruebas que cubren el contrato de datos, el SHA-256, la inspección no destructiva, el descubrimiento de archivos, las columnas del CSV, los tres niveles de extracción de imágenes y las defensas del servidor local (CSP, Host/Origin y límites de carga). No requieren instalar el paquete (los módulos de prueba añaden `src` al `PYTHONPATH`).
 
 ---
 
