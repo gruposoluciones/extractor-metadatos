@@ -18,12 +18,20 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from extractor.config import (  # noqa: E402
+    APP_NAME,
+    ORGANIZATION,
+    __version__,
+)
+
 SCRIPTS = ROOT / "scripts"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 NAME = "ExtractorMetadatos"
-APP_NAME = "Extractor de Metadatos"
 BUNDLE = f"{APP_NAME}.app"
+SHORT_VERSION = ".".join(__version__.split(".")[:2])
 
 COLLECT_ALL = ("openpyxl", "docx", "pypdf", "defusedxml", "xlrd", "olefile", "charset_normalizer")
 COLLECT_SUBMODULES = ("PIL",)
@@ -67,9 +75,9 @@ INFO_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <dict>
     <key>CFBundleName</key><string>{app}</string>
     <key>CFBundleDisplayName</key><string>{app}</string>
-    <key>CFBundleIdentifier</key><string>com.diviac.extractormetadatos</string>
-    <key>CFBundleVersion</key><string>2.0</string>
-    <key>CFBundleShortVersionString</key><string>2.0</string>
+    <key>CFBundleIdentifier</key><string>com.{org}.extractormetadatos</string>
+    <key>CFBundleVersion</key><string>{version}</string>
+    <key>CFBundleShortVersionString</key><string>{short_version}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleExecutable</key><string>{name}</string>
     <key>CFBundleIconFile</key><string>icono</string>
@@ -195,7 +203,14 @@ def build_app_bundle(payload: Path) -> Path:
     if icon.exists():
         shutil.copy2(icon, resources / "icono.icns")
     (bundle / "Contents" / "Info.plist").write_text(
-        INFO_PLIST.format(app=APP_NAME, name=NAME), encoding="utf-8"
+        INFO_PLIST.format(
+            app=APP_NAME,
+            name=NAME,
+            org=ORGANIZATION.lower(),
+            version=__version__,
+            short_version=SHORT_VERSION,
+        ),
+        encoding="utf-8",
     )
     return bundle
 
